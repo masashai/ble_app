@@ -13,7 +13,8 @@ class MyApp extends StatelessWidget {
     _flutterBlue.scan(timeout: Duration(seconds: timeout),)
         .listen((scanResult) {
           var device = scanResult.device;
-            print('${device.name} found! rssi: ${scanResult.rssi}');
+          var ad = scanResult.advertisementData.serviceUuids;
+          print('${device.name} found! rssi: ${scanResult.rssi}');
     }, onDone: stopScan);
   }
 
@@ -23,26 +24,12 @@ class MyApp extends StatelessWidget {
   //---------------BT接続周りの実装 END ---------------//
 
   //---------------Androidメソッド呼び出し実装START---------------//
-  static const _platform = const MethodChannel("com.flutter.ble/method1");
+  static const _platform = const MethodChannel("package.name/sample");
 
-  String _label1 = '';
   void _getDataFromPlatform() async {
-    var paramMap = <String, dynamic>{
-      'a': 7,
-      'b': 8,
-    };
-    var resMap = <dynamic, dynamic>{};
-
     try {
-      resMap = await _platform.invokeMethod(
-        "Func1",
-        paramMap,
-      );
-      var calcResult = resMap["calcResult"];
-      var deviceName = resMap["deviceName"];
-
-      _label1 = "$calcResult ($deviceName)";
-      print(_label1);
+      var result = await _platform.invokeMethod("test");
+      print(result);
     } catch (e) {
       print(e);
     }

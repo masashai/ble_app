@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="uuid_service">47968aa6-eb7e-11e9-81b4-2a2ae2dbcce4</string>
+    <string name="uuid_characteristic">47968d76-eb7e-11e9-81b4-2a2ae2dbcce4</string>
+</resources>
