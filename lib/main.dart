@@ -1,12 +1,60 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue/flutter_blue.dart';
 
 void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
   // This widget is the root of your application.
+  //---------------BT接続周りの実装START---------------//
+  final int timeout = 4;
+  final FlutterBlue _flutterBlue = FlutterBlue.instance;
+  void scanDevices() {
+    _flutterBlue.scan(timeout: Duration(seconds: timeout),)
+        .listen((scanResult) {
+          var device = scanResult.device;
+            print('${device.name} found! rssi: ${scanResult.rssi}');
+    }, onDone: stopScan);
+  }
+
+  void stopScan() {
+    _flutterBlue.stopScan();
+  }
+  //---------------BT接続周りの実装 END ---------------//
+
+  //---------------Androidメソッド呼び出し実装START---------------//
+  static const _platform = const MethodChannel("com.flutter.ble/method1");
+
+  String _label1 = '';
+  void _getDataFromPlatform() async {
+    var paramMap = <String, dynamic>{
+      'a': 7,
+      'b': 8,
+    };
+    var resMap = <dynamic, dynamic>{};
+
+    try {
+      resMap = await _platform.invokeMethod(
+        "Func1",
+        paramMap,
+      );
+      var calcResult = resMap["calcResult"];
+      var deviceName = resMap["deviceName"];
+
+      _label1 = "$calcResult ($deviceName)";
+      print(_label1);
+    } catch (e) {
+      print(e);
+    }
+  }
+  //---------------Androidメソッド呼び出し実装 END ---------------//
+
   @override
   Widget build(BuildContext context) {
+    // BT接続可能デバイスにデータ送信
+    _getDataFromPlatform();
+    // BT接続可能デバイスを取得
+    scanDevices();
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
