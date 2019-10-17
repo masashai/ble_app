@@ -6,23 +6,6 @@ void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
   // This widget is the root of your application.
-  //---------------BT接続周りの実装START---------------//
-  final int timeout = 4;
-  final FlutterBlue _flutterBlue = FlutterBlue.instance;
-  void scanDevices() {
-    _flutterBlue.scan(timeout: Duration(seconds: timeout),)
-        .listen((scanResult) {
-          var device = scanResult.device;
-          var ad = scanResult.advertisementData.serviceUuids;
-          print('${device.name} found! rssi: ${scanResult.rssi}');
-    }, onDone: stopScan);
-  }
-
-  void stopScan() {
-    _flutterBlue.stopScan();
-  }
-  //---------------BT接続周りの実装 END ---------------//
-
   //---------------Androidメソッド呼び出し実装START---------------//
   static const _platform = const MethodChannel("package.name/sample");
 
@@ -40,8 +23,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // BT接続可能デバイスにデータ送信
     _getDataFromPlatform();
-    // BT接続可能デバイスを取得
-    scanDevices();
+
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
@@ -75,7 +57,6 @@ class MyHomePage extends StatefulWidget {
 
   final String title;
 
-
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
@@ -84,6 +65,8 @@ class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
 
   void _incrementCounter() {
+    //scanDevices();
+    scanBTDevices();
     setState(() {
       // This call to setState tells the Flutter framework that something has
       // changed in this State, which causes it to rerun the build method below
@@ -93,6 +76,150 @@ class _MyHomePageState extends State<MyHomePage> {
       _counter++;
     });
   }
+
+  //---------------BT接続周りの実装START---------------//
+  final int timeout = 4;
+  final FlutterBlue _flutterBlue = FlutterBlue.instance;
+  final String _serviceUuid = '47968aa6-eb7e-11e9-81b4-2a2ae2dbcce4';
+  final String _characteristicUuid = '47968d76-eb7e-11e9-81b4-2a2ae2dbcce4';
+  BluetoothDeviceState lastState;
+  bool isCommunicating = false;
+  List<BluetoothDevice> _devices = [];
+  BluetoothDevice _device;
+  List<ScanResult> _scanResults = [];
+  String _connectedDeviceName = '';
+  /// ログ出力
+  void log (String tag, String text) {
+    print ('$tag $text');
+  }
+
+  /// BLEメイン処理
+  void bleExecute() {
+
+  }
+
+  /// 端末のスキャン
+  void scanBTDevices() {
+    isCommunicating = false;
+    _flutterBlue.scan(timeout: Duration(seconds: timeout)).listen((scanResult) async {
+      _scanResults.add(scanResult);
+    }, onDone: postFunc);
+  }
+
+  /// スキャン後の処理
+  void postFunc() {
+    // スキャンの終了
+    _flutterBlue.stopScan().then((result) {
+      // 対象端末の抽出
+      List<BluetoothDevice> targetDevices = _scanResults
+          .where((s) => s.advertisementData.connectable)
+          .where((s) => s.advertisementData.serviceUuids
+          .where((u) => u == _serviceUuid).length > 0)
+          .map((s) => s.device).toSet().toList();
+      log("対象端末の抽出", '対象端末数: ${targetDevices.length}');
+      // 対象端末に接続
+      var timeout = 30;
+      targetDevices.forEach((device) {
+        var deviceInfo = "${device.name}(${device.id})";
+        if (lastState != BluetoothDeviceState.connected) {
+          device.connect(timeout: Duration(seconds: timeout));
+        }
+        else {
+          log(deviceInfo, '端末との接続が完了しているため接続処理は実施しません。');
+          // 接続端末とデータのやり取り
+          communicate(device);
+        }
+
+        device.state.listen((state) {
+          if (state != lastState) {
+            lastState = state;
+            // 接続完了時の処理
+            if (state == BluetoothDeviceState.connected) {
+              log(deviceInfo, '端末との接続が完了しました。');
+              // 接続端末とデータのやり取り
+              communicate(device);
+            }
+
+            // 切断完了時の処理
+            if (state == BluetoothDeviceState.disconnected) {
+              log(deviceInfo, '端末との接続が切断されました。');
+              // スキャン再開
+              //scanBTDevices();
+              setState(() {
+                _connectedDeviceName = '';
+              });
+            }
+
+            if (state == BluetoothDeviceState.connecting) {
+              log(deviceInfo, '端末との接続を試行中。');
+            }
+
+            if (state == BluetoothDeviceState.disconnecting) {
+              log(deviceInfo, '端末との接続切断を試行中。');
+            }
+          }
+          else {
+            log(deviceInfo, '接続状態に変更なし。接続状態: ${lastState.toString()}');
+          }
+        });
+      });
+    });
+  }
+
+  void communicate(BluetoothDevice device) {
+    var deviceInfo = "${device.name}(${device.id})";
+
+    if (isCommunicating) {
+      log(deviceInfo, '既に実行中のため接続端末とのやり取りは実施しません。');
+      return;
+    }
+
+    isCommunicating = true;
+
+    device.discoverServices().then((services) {
+      BluetoothService service = services.where((s) => s.uuid.toString() == _serviceUuid).toList()?.first;
+      log(deviceInfo, '対象サービス: ${service.uuid.toString()}');
+      if (service != null) {
+        var characteristic = service.characteristics.where((s) => s.uuid.toString() == _characteristicUuid).toList()?.first;
+        log(deviceInfo, '対象キャラクタリスティック: ${characteristic.uuid.toString()}');
+        setState(() {
+          _connectedDeviceName = device.name;
+        });
+        if (characteristic != null) {
+          characteristic.read().then((val) {
+            log(deviceInfo, 'キャラクタリスティック内容: $val');
+          });
+        }
+        else {
+          log(deviceInfo, 'サービス内に対象キャラクタリスティックが見つかりませんでした。');
+        }
+      }
+      else {
+        log(deviceInfo, '端末内に対象サービスが見つかりませんでした。');
+      }
+
+      // 端末との切断
+      device.disconnect();
+      isCommunicating = false;
+    });
+  }
+
+  void onDone() {
+    _flutterBlue.stopScan();
+//    _devices = _devices.toSet().toList();
+//    _devices.forEach ((device) {
+//      print('found device: ${device.name}(${device.id})');
+//    });
+
+//    _scanResults = _scanResults.toSet().toList();
+//    _scanResults.forEach ((scanResult) {
+//      print('---------------------------------------------------');
+//      print('device: ${scanResult.device.name}(${scanResult.device.id})');
+//      print('advertisementData: ${scanResult.advertisementData}(connectable: ${scanResult.advertisementData.connectable})');
+//      print('serviceUuids: ${scanResult.advertisementData.serviceUuids}');
+//    });
+  }
+  //---------------BT接続周りの実装 END ---------------//
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +256,7 @@ class _MyHomePageState extends State<MyHomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Text(
-              'You have pushed the button this many times:',
+              'Connected Device Name: $_connectedDeviceName',
             ),
             Text(
               '$_counter',
@@ -138,10 +265,23 @@ class _MyHomePageState extends State<MyHomePage> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
+      floatingActionButton: StreamBuilder<bool>(
+        stream: FlutterBlue.instance.isScanning,
+        initialData: false,
+        builder: (c, snapshot) {
+          if (snapshot.data) {
+            return FloatingActionButton(
+              child: Icon(Icons.stop),
+              onPressed: () => FlutterBlue.instance.stopScan(),
+              backgroundColor: Colors.red,
+            );
+          } else {
+            return FloatingActionButton(
+                child: Icon(Icons.search),
+                onPressed: () => FlutterBlue.instance
+                    .startScan(timeout: Duration(seconds: 4)));
+          }
+        },
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
